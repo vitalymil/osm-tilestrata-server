@@ -26,4 +26,4 @@ COPY package-lock.json .
 RUN npm install --unsafe
 COPY index.js .
 
-CMD [ "node", "/server/index.js" ]
+ENTRYPOINT [ "node", "/server/index.js" ]
