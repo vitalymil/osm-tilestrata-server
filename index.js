@@ -20,23 +20,16 @@ const corsPlugin = {
     }
 };
 
-if (process.argv.length < 4) {
-    throw new Error('missing name (1) or mapnik xml (2) path arguments');
-}
-else if (process.argv.legnth > 4 && process.argv.length < 6) {
-    throw new Error('missing grid fields argument (3)')
-}
-
 console.log('starting renderer with arguments:')
 for (const arg of process.argv) {
     console.log(`\t${arg}`);
 }
 
-const name = process.argv[3];
-const xmlPath = process.argv[4];
-const inputGridLayers = process.argv[5] ? fs.readFileSync(process.argv[5], 'utf8').split('\n') : false;
-const gridFields = process.argv[6];
-const layerTransformer = process.argv[7] ? require(`${process.argv[7]}`) : false;
+const name = process.argv[4];
+const xmlPath = process.argv[5];
+const inputGridLayers = process.argv[6] ? fs.readFileSync(process.argv[6], 'utf8').split('\n') : false;
+const gridFields = process.argv[7];
+const layerTransformer = process.argv[8] ? require(`${process.argv[8]}`) : false;
 const balancer = process.argv[2] === 'no-balancer' ? null : 
                                                     {
                                                         balancer: {
@@ -46,53 +39,49 @@ const balancer = process.argv[2] === 'no-balancer' ? null :
 
 const strata = tilestrata(balancer);
 
-let mapnikXml = null;
+let mapnikXml = fs.readFileSync(xmlPath, 'utf8');
+const mapnikJs = xmljs.xml2js(mapnikXml, { compact: true });
 
-if (inputGridLayers && inputGridLayers.length > 0) {
-    mapnikXml = fs.readFileSync(xmlPath, 'utf8');
-    const mapnikJs = xmljs.xml2js(mapnikXml, { compact: true });
+const gridLayers = [];
 
-    const gridLayers = [];
-
-    for (const layer of mapnikJs.Map.Layer) {
-        if (layer.Datasource.Parameter.some(parameter => 
-                parameter._attributes.name === 'type' &&
-                parameter._cdata === 'postgis') &&
-                inputGridLayers.includes(layer._attributes.name)) {
-                gridLayers.push(layer._attributes.name);
-                if (layerTransformer) {
-                    layerTransformer(layer);
-                }
-        }
+for (const layer of mapnikJs.Map.Layer) {
+    if (layerTransformer) {
+        layerTransformer(layer, inputGridLayers, gridLayers);
     }
+}
 
-    const gridLayerParameter = {
-        _attributes: {
-            name: 'interactivity_layer'
-        },
-        _text: null
-    }
+mapnikXml = xmljs.js2xml(mapnikJs, { compact: true });
+fs.writeFileSync(xmlPath, mapnikXml);
 
-    mapnikJs.Map.Parameters.Parameter.push(gridLayerParameter);
-    mapnikJs.Map.Parameters.Parameter.push({
-        _attributes: {
-            name: 'interactivity_fields'
-        },
-        _text: gridFields
-    });
+const gridLayerParameter = {
+    _attributes: {
+        name: 'interactivity_layer'
+    },
+    _text: null
+}
 
+mapnikJs.Map.Parameters.Parameter.push(gridLayerParameter);
+mapnikJs.Map.Parameters.Parameter.push({
+    _attributes: {
+        name: 'interactivity_fields'
+    },
+    _text: gridFields
+});
+
+if (gridLayers.length > 0) {
     for (const layer of gridLayers) {
         gridLayerParameter._text = layer;
-        strata.layer(`${name}-${layer}-grid`)
+        strata.layer(`${name}-${layer}-grid`, { metatile: 8 })
             .route('tile.json')
                 .use(mapnik({
                     pathname: xmlPath,
                     xml: xmljs.js2xml(mapnikJs, { compact: true }),
-                    interactivity: true
+                    interactivity: true,
+                    metatile: 8
                 }));
     }
 
-    strata.layer(name)
+    strata.layer(name, { metatile: 8 })
         .route('tile.json')
             .use(corsPlugin)
             .use(utfmerge(
@@ -100,12 +89,13 @@ if (inputGridLayers && inputGridLayers.length > 0) {
             ));
 }
 
-strata.layer(name)
+strata.layer(name, { metatile: 8 })
     .route('tile.png')
         .use(corsPlugin)
         .use(mapnik({
             pathname: xmlPath,
-            xml: mapnikXml
+            xml: mapnikXml,
+            metatile: 8
         }))
     .route('tile.pbf')
         .use(corsPlugin)
@@ -113,5 +103,5 @@ strata.layer(name)
             xml: xmlPath
         }));
 
-strata.listen(8081).setTimeout(1000 * 60 * 60);
+strata.listen(Number(process.argv[3] || 8081)).setTimeout(1000 * 60 * 60);
 
