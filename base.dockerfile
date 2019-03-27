@@ -20,6 +20,10 @@ RUN mv NotoSansArabicUI-Bold.ttf /usr/share/fonts/truetype/noto/NotoSansArabicUI
 
 RUN apt-get install -y git mapnik-utils
 
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+RUN apt-get install git-lfs
+RUN git lfs install
+
 WORKDIR /server
 COPY package.json .
 COPY package-lock.json .
